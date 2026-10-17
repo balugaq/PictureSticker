@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PictureSticker · 截图工具需求确认原型</title>
+<style>
+:root{
+  --bg:#1C1C1E; --panel:#2C2C2E; --panel-2:#232325; --hover:#3A3A3C;
+  --border:#48484A; --divider:#38383A; --accent:#0A84FF;
+  --text:#E5E5EA; --text-2:#8E8E93;
+  --red:#FF3B30; --yellow:#FFCC00; --green:#34C759; --blue:#0A84FF; --white:#FFFFFF; --gray:#8E8E93;
+  --pin-sel:#64D2FF;
+}
+*{box-sizing:border-box; margin:0; padding:0;}
+[hidden]{display:none !important;}
+body{background:#111113; color:var(--text); font:13px/1.5 "Segoe UI","Microsoft YaHei",sans-serif; padding-bottom:40px;}
+h1{font-size:16px;}
+button{font:inherit; color:inherit; background:none; border:none; cursor:pointer;}
+
+/* ===== 顶部 ===== */
+.topbar{display:flex; align-items:baseline; gap:14px; padding:14px 20px 4px;}
+.topbar .hint{color:var(--text-2); font-size:12px;}
+.tabs{display:flex; gap:8px; padding:8px 20px 12px; flex-wrap:wrap;}
+.tabs button{padding:6px 14px; border-radius:6px; background:#1a1a1c; border:1px solid var(--divider); color:var(--text-2);}
+.tabs button.on{background:var(--accent); border-color:var(--accent); color:#fff;}
+
+/* ===== 舞台 ===== */
+.stage{position:relative; width:min(1100px,calc(100vw - 40px)); height:660px; margin:0 auto; border-radius:12px; overflow:hidden;
+  background:linear-gradient(135deg,#3b4a5a 0%,#5a6b7d 45%,#8a7a66 100%); border:1px solid #000;}
+.scene{position:absolute; inset:0; display:none;}
+.scene.active{display:block;}
+.desktop{position:absolute; inset:0;}
+.fake-win{position:absolute; background:#e8e6e3; border-radius:6px; box-shadow:0 6px 24px rgba(0,0,0,.35); color:#333;}
+.fake-win .bar{height:26px; background:#f3f1ee; border-radius:6px 6px 0 0; border-bottom:1px solid #ddd; display:flex; align-items:center; padding:0 10px; font-size:11px; color:#666;}
+.stage-note{position:absolute; z-index:40; background:rgba(0,0,0,.65); color:#fff; font-size:12px; padding:4px 10px; border-radius:4px;}
+#capCanvas{position:absolute; inset:0; width:100%; height:100%; display:block;}
+
+/* ===== 场景① 悬浮球 ===== */
+.ball-wrap{position:absolute; right:70px; top:110px; z-index:30;}
+.ball{width:76px; height:76px; border-radius:50%; background:rgba(44,44,46,.9); border:1px solid var(--border);
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; cursor:pointer;
+  box-shadow:0 8px 30px rgba(0,0,0,.5); transition:background .15s;}
+.ball:hover{background:rgba(58,58,60,.95);}
+.ball-btn{width:40px; height:26px; border-radius:6px; color:#fff; font-size:13px; display:flex; align-items:center; justify-content:center;}
+.ball-btn:hover{background:var(--hover);}
+.cfg-pop{position:absolute; right:88px; top:0; width:250px; background:rgba(44,44,46,.98); border:1px solid var(--border);
+  border-radius:8px; padding:12px; box-shadow:0 10px 40px rgba(0,0,0,.5);}
+.cfg-row{display:flex; align-items:center; gap:8px;}
+.cfg-desc{color:var(--text-2); font-size:11px; margin:6px 0 10px;}
+.switch{position:relative; width:34px; height:20px; border-radius:10px; background:var(--hover); cursor:pointer; flex:none; transition:background .15s;}
+.switch::after{content:""; position:absolute; left:2px; top:2px; width:16px; height:16px; border-radius:50%; background:#fff; transition:left .15s;}
+.switch.on{background:var(--accent);}
+.switch.on::after{left:16px;}
+.mini-btn{width:100%; padding:6px; border-radius:6px; background:var(--accent); color:#fff; font-size:12px;}
+.mini-btn:disabled{background:var(--hover); color:var(--text-2); cursor:not-allowed;}
+
+/* ===== 场景② 截图 ===== */
+.state-legend{position:absolute; left:16px; top:14px; z-index:40; display:flex; gap:8px;}
+.state-badge{padding:3px 10px; border-radius:12px; font-size:11px; background:rgba(28,28,30,.85); border:1px solid var(--divider); color:var(--text-2);}
+.state-badge.on{border-color:var(--accent); color:#fff;}
+.pending-region{position:absolute; left:90px; top:120px; width:300px; height:170px; border:1px dashed #ffd60a; border-radius:2px; z-index:20; pointer-events:none;}
+.pending-region .tag{position:absolute; left:0; top:-22px; background:#ffd60a; color:#000; font-size:10px; padding:1px 6px; border-radius:2px;}
+.sel{position:absolute; left:310px; top:185px; width:480px; height:290px;
+  border:1px solid #fff; z-index:25; --r:0px; border-radius:var(--r);
+  box-shadow:0 0 0 9999px rgba(0,0,0,.45);}
+.sel.shadow-on{box-shadow:0 0 0 9999px rgba(0,0,0,.45), 0 12px 40px rgba(0,0,0,.75);}
+.sel.edge-n,.sel.edge-s{cursor:ns-resize;}
+.sel.edge-e,.sel.edge-w{cursor:ew-resize;}
+.sel.edge-ne,.sel.edge-sw{cursor:nesw-resize;}
+.sel.edge-nw,.sel.edge-se{cursor:nwse-resize;}
+.sel-top{position:absolute; bottom:calc(100% + 10px); left:0; display:flex; align-items:center; gap:10px;
+  background:rgba(44,44,46,.95); border-radius:6px; padding:6px 12px; white-space:nowrap; color:var(--text);}
+.sel-size{font-size:12px; min-width:74px; color:#fff;}
+.sel-top label{display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text);}
+.sel-bottom{position:absolute; top:calc(100% + 10px); left:0; min-width:100%;}
+.toolrow{display:flex; align-items:stretch; gap:2px; background:rgba(28,28,30,.95); border-radius:8px; padding:4px; box-shadow:0 8px 30px rgba(0,0,0,.5); width:max-content;}
+.tbtn{position:relative; display:flex; flex-direction:row; align-items:center; justify-content:center; gap:2px; min-width:34px; height:34px; padding:0 7px; border-radius:6px; color:var(--text);}
+.tbtn:hover{background:var(--hover);}
+.tbtn.on{background:var(--accent); color:#fff;}
+.tbtn.ok{color:#34C759;}
+.tbtn.ok:hover{background:rgba(52,199,89,.15);}
+.tbtn.cancel{color:#FF3B30;}
+.tbtn.cancel:hover{background:rgba(255,59,48,.15);}
+.tbtn .caret{font-size:9px; opacity:.6; margin-left:1px; transform:translateY(4px);}
+.vdiv{width:1px; background:var(--divider); margin:6px 4px;}
+.tico{font-size:17px; line-height:1; font-family:"Segoe UI Emoji","Segoe UI Symbol",sans-serif;}
+.tgrip{width:12px; align-self:stretch; display:flex; align-items:center; justify-content:center; cursor:grab; color:var(--text-2); font-size:10px;}
+.tbtn[data-tip]::after{content:attr(data-tip); position:absolute; top:calc(100% + 7px); left:50%; transform:translateX(-50%); background:rgba(0,0,0,.85); color:#fff; font-size:11px; padding:3px 9px; border-radius:4px; white-space:nowrap; opacity:0; pointer-events:none; transition:opacity .1s; z-index:80;}
+.tbtn[data-tip]:hover::after{opacity:1;}
+.mode-menu{position:absolute; z-index:75; background:rgba(44,44,46,.99); border:1px solid var(--border); border-radius:8px; padding:4px; min-width:128px; box-shadow:0 12px 40px rgba(0,0,0,.55);}
+.seg.icons button{padding:3px 9px; display:flex; align-items:center; justify-content:center;}
+.ico-frame{width:13px; height:13px; border:2px solid currentColor; border-radius:3px; display:block;}
+.ico-fill{width:13px; height:13px; background:currentColor; border-radius:3px; display:block;}
+.colorwell{display:flex; align-items:center; gap:4px; padding:3px 7px; border-radius:5px; border:1px solid var(--border); background:var(--panel-2); cursor:pointer;}
+.colorwell:hover{background:var(--hover);}
+.colorwell .cw{width:15px; height:15px; border-radius:3px; border:1px solid rgba(255,255,255,.35); display:block;}
+.sel-wm{position:absolute; inset:0; overflow:hidden; border-radius:inherit; pointer-events:none; display:flex; align-items:center; z-index:1;}
+.sel-wm .wm-inner{width:260%; margin-left:-80%; transform:rotate(-24deg); color:rgba(120,120,120,.4); font-weight:600; line-height:2.2; word-break:break-all; text-align:center;}
+
+/* 二级面板 */
+.subpanel{margin-top:6px; background:rgba(44,44,46,.98); border-radius:8px; padding:8px 10px; box-shadow:0 8px 30px rgba(0,0,0,.5); width:max-content; max-width:640px;}
+.subpanel[hidden]{display:none;}
+.subrow{display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:3px 0;}
+.subrow + .subrow{border-top:1px solid var(--divider);}
+.sublabel{font-size:11px; color:var(--text-2); min-width:52px;}
+.seg{display:flex; gap:2px; background:var(--panel-2); border-radius:6px; padding:2px;}
+.seg button{padding:3px 10px; border-radius:5px; font-size:12px; color:var(--text-2);}
+.seg button.on{background:var(--accent); color:#fff;}
+.swatches{display:flex; gap:5px; align-items:center;}
+.swatch{width:18px; height:18px; border-radius:50%; border:1px solid rgba(255,255,255,.25); cursor:pointer; position:relative;}
+.swatch.on::after{content:""; position:absolute; inset:-4px; border:2px solid #fff; border-radius:50%;}
+.swatch.custom{background:var(--border); color:var(--text); font-size:12px; display:flex; align-items:center; justify-content:center;}
+.sliderrow{display:flex; align-items:center; gap:8px;}
+.sliderrow .val{font-size:11px; color:var(--text-2); min-width:26px; text-align:right;}
+input[type=range]{-webkit-appearance:none; width:110px; height:4px; border-radius:2px; background:var(--border); outline:none;}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none; width:14px; height:14px; border-radius:50%; background:var(--accent); cursor:pointer;}
+input[type=checkbox]{accent-color:var(--accent);}
+select{background:var(--panel-2); color:var(--text); border:1px solid var(--border); border-radius:5px; padding:3px 6px; font-size:12px;}
+.tinput{background:var(--panel-2); border:1px solid var(--border); border-radius:5px; padding:4px 8px; color:var(--text); font-size:12px; width:170px;}
+.tinput::placeholder{color:var(--text-2);}
+
+/* 放大镜（边框缩放选区时出现） */
+#magnifier{position:absolute; z-index:60; display:none; width:120px; border-radius:8px; overflow:hidden;
+  border:2px solid var(--accent); background:#000; box-shadow:0 8px 30px rgba(0,0,0,.6); pointer-events:none;}
+#magCanvas{display:block; width:120px; height:120px; image-rendering:pixelated;}
+.mag-cross{position:absolute; inset:0 0 20px 0; pointer-events:none;}
+.mag-cross::before{content:""; position:absolute; left:50%; top:8px; bottom:8px; width:1.5px; margin-left:-1px; background:var(--accent);}
+.mag-cross::after{content:""; position:absolute; top:50%; left:8px; right:8px; height:1.5px; margin-top:-1px; background:var(--accent);}
+#magHex{position:absolute; left:0; right:0; bottom:0; background:rgba(28,28,30,.88); color:#fff; font-size:11px; text-align:center; padding:2px 0; letter-spacing:.5px;}
+
+/* 马赛克预览 / 序号示意 / 水印 */
+.mini-prev{width:120px; height:56px; border-radius:6px; border:1px solid var(--border); overflow:hidden; position:relative; background:#d9c8a9;}
+.prev-mosaic{position:absolute; inset:0; background:conic-gradient(#c9b28a 25%,#b39c76 0 50%,#c9b28a 0 75%,#b39c76 0) 0 0/12px 12px;}
+.prev-blur{position:absolute; inset:0; filter:blur(6px); color:#5a4632; font-size:16px; padding:6px;}
+.prev-brush{position:absolute; inset:0;}
+.prev-brush::before{content:""; position:absolute; left:14px; top:10px; width:26px; height:26px; border-radius:50%; background:radial-gradient(circle,#e8dcc8 0 45%,transparent 50%); box-shadow:26px 14px 0 -2px #e8dcc8, 52px 4px 0 -4px #e8dcc8;}
+.prev-rect{position:absolute; inset:0;}
+.prev-rect::before{content:""; position:absolute; left:12px; top:10px; right:24px; bottom:12px; border:1.5px dashed #fff; border-radius:4px;}
+.wm-box{width:220px; height:64px; border-radius:6px; border:1px solid var(--border); overflow:hidden; position:relative; background:#e8e6e3;}
+.wm-text{position:absolute; left:-30px; top:50%; width:320px; transform:translateY(-50%) rotate(-24deg); color:rgba(80,80,80,.35); font-size:13px; white-space:nowrap; font-weight:600;}
+.num-demo{display:flex; align-items:flex-start; gap:0; padding:4px 0;}
+.num-dot{width:22px; height:22px; border-radius:50%; background:var(--red); color:#fff; font-size:12px; display:flex; align-items:center; justify-content:center; flex:none; margin-top:14px;}
+.num-line{width:34px; height:1.5px; background:var(--red); margin-top:24px; flex:none;}
+.num-input{border:1.5px solid var(--red); border-radius:5px; padding:5px 8px; color:var(--text); font-size:12px; width:130px; color-scheme:dark; background:var(--panel-2);}
+
+/* ===== 场景③ 钉图 ===== */
+.pin{position:absolute; border:1px solid var(--hover); border-radius:4px; overflow:hidden; cursor:move; box-shadow:0 8px 26px rgba(0,0,0,.45); z-index:20;}
+.pin .pic{display:block; width:100%; height:100%; object-fit:cover;}
+.pin.selected{border:2px solid var(--pin-sel);}
+.pin-tips{position:absolute; right:6px; top:6px; display:flex; gap:3px; opacity:0; transition:opacity .12s;}
+.pin:hover .pin-tips{opacity:1;}
+.pin-tip{width:24px; height:24px; border-radius:4px; background:rgba(28,28,30,.7); color:#fff; font-size:12px; display:flex; align-items:center; justify-content:center;}
+.pin-tip:hover{background:var(--accent);}
+.menu-card{position:absolute; z-index:50; background:rgba(44,44,46,.99); border:1px solid var(--border); border-radius:8px; padding:4px; min-width:190px; box-shadow:0 12px 40px rgba(0,0,0,.55);}
+.menu-card .mtitle{font-size:10px; color:var(--text-2); padding:4px 10px 6px; border-bottom:1px solid var(--divider); margin-bottom:2px;}
+.mitem{display:flex; align-items:center; justify-content:space-between; gap:14px; padding:6px 10px; border-radius:5px; font-size:12px; cursor:pointer; color:var(--text);}
+.mitem:hover{background:var(--accent); color:#fff;}
+.mitem .arr{color:var(--text-2); font-size:10px;}
+.mitem:hover .arr{color:#fff;}
+.mitem.danger{color:#FF3B30;}
+.msep{height:1px; background:var(--divider); margin:3px 6px;}
+.msub{margin:0 8px 4px; background:var(--panel-2); border-radius:5px; padding:3px;}
+.msub .mitem{font-size:11px; padding:4px 8px;}
+.mitem .chk{font-size:10px; color:var(--text-2);}
+.mitem:hover .chk{color:#fff;}
+
+/* ===== 场景④ 配色速查 ===== */
+.color-sheet{position:absolute; inset:0; background:var(--bg); padding:24px 30px; overflow:auto; z-index:10;}
+.color-sheet h2{font-size:14px; margin:14px 0 8px; color:#fff;}
+.chips{display:flex; gap:10px; flex-wrap:wrap;}
+.chip{width:130px; border-radius:8px; overflow:hidden; border:1px solid var(--divider);}
+.chip .c{height:44px;}
+.chip .t{padding:6px 8px; font-size:11px; background:var(--panel);}
+.chip .t b{display:block; font-size:12px;}
+.chip .t span{color:var(--text-2);}
+
+.foot{width:min(1100px,calc(100vw - 40px)); margin:14px auto 0; color:var(--text-2); font-size:12px;}
+.foot b{color:var(--text);}
+.todo-box{width:min(1100px,calc(100vw - 40px)); margin:10px auto 0; background:var(--panel); border:1px solid var(--divider); border-radius:10px; padding:14px 18px;}
+.todo-box h3{font-size:13px; color:var(--yellow); margin-bottom:6px;}
+.todo-box li{margin-left:18px; color:var(--text-2); font-size:12px; margin-top:3px;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>PictureSticker · 截图工具需求确认原型</h1>
+  <div class="hint">可点击交互 · 无实际功能 · 配色以 macOS 深色系为基础（Windows 协调）</div>
+</div>
+
+<nav class="tabs" id="tabs">
+  <button data-scene="s-ball" class="on">① 悬浮球与设置</button>
+  <button data-scene="s-cap">② 截图选区与工具</button>
+  <button data-scene="s-pin">③ 钉图窗口</button>
+  <button data-scene="s-color">④ 配色速查</button>
+</nav>
+
+<div class="stage" id="stage">
+
+  <!-- ============ 场景① 悬浮球 ============ -->
+  <section class="scene active" id="s-ball">
+    <div class="desktop">
+      <div class="fake-win" style="left:60px;top:70px;width:420px;height:260px"><div class="bar">浏览器 — 某网页</div></div>
+      <div class="fake-win" style="left:300px;top:300px;width:380px;height:220px"><div class="bar">编辑器 — main.py</div></div>
+    </div>
+    <div class="stage-note" style="left:16px; bottom:14px;">悬浮球：默认圆形悬浮于桌面 · 可按住拖动 · 点击「截图」隐藏自身后进入截图</div>
+
+    <div class="ball-wrap">
+      <div class="ball" title="按住可拖动（原型示意）">
+        <button class="ball-btn" id="btnCap" title="截图">✂ 截图</button>
+        <button class="ball-btn" id="btnCfg" title="设置">⚙ 设置</button>
+      </div>
+      <div class="cfg-pop" id="cfgPop" hidden>
+        <div class="cfg-row">
+          <div class="switch" id="swLink" role="switch" aria-checked="false"></div>
+          <span>连接所有钉截图</span>
+        </div>
+        <div class="cfg-desc">开启后所有钉图窗口加入同一分组，可一键最小化全部钉图。</div>
+        <button class="mini-btn" id="btnMiniAll" disabled>一键最小化所有钉图</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 场景② 截图 ============ -->
+  <section class="scene" id="s-cap">
+    <canvas id="capCanvas" width="1100" height="660"></canvas>
+
+    <div class="state-legend">
+      <span class="state-badge">未选择（拖拽矩形）</span>
+      <span class="state-badge">未确定（hover 程序）</span>
+      <span class="state-badge on">已选择</span>
+    </div>
+    <div class="pending-region"><span class="tag">未确定：hover 检测到的程序窗口</span></div>
+    <div class="stage-note" style="right:16px; bottom:14px; max-width:480px;">已选择后：按住选区拖动 · 边框拉伸（放大镜，C 复制色号）· Esc 取消 · A/◐ 进入当前模式，▾ 切模式 · 📌 钉在桌面=完成截图</div>
+
+    <div class="sel" id="sel">
+      <!-- 水印模式的选区内实时预览（多处斜向平铺） -->
+      <div class="sel-wm" id="selWm" hidden><div class="wm-inner" id="selWmInner"></div></div>
+      <div class="sel-top">
+        <span class="sel-size" id="selSize">480 × 290</span>
+        <label>圆角 <input type="range" id="rngRadius" min="0" max="100" value="0"> <span class="val" id="valRadius">0</span></label>
+        <label>阴影 <input type="checkbox" id="cbShadow"></label>
+      </div>
+
+      <div class="sel-bottom" id="selBottom">
+        <div class="toolrow" id="mainTools">
+          <div class="tgrip" title="按住拖动">⠿</div>
+          <button class="tbtn" data-tool="shape" data-tip="形状"><span class="tico">▭</span></button>
+          <button class="tbtn" data-tool="arrow" data-tip="箭头"><span class="tico">↗</span></button>
+          <button class="tbtn" data-tool="pen" data-tip="画笔"><span class="tico">✏</span></button>
+          <div class="vdiv"></div>
+          <button class="tbtn" data-tool="text" data-tip="文本"><span class="tico">A</span></button>
+          <button class="tbtn" data-tool="text-mode" data-tip="文字 / 序号"><span class="tico" style="font-size:10px; opacity:.8">▾</span></button>
+          <button class="tbtn" data-tool="mosaic" data-tip="马赛克"><span class="tico">◐</span></button>
+          <button class="tbtn" data-tool="mosaic-mode" data-tip="马赛克 / 高亮 / 水印"><span class="tico" style="font-size:10px; opacity:.8">▾</span></button>
+          <button class="tbtn" data-tool="pin" data-tip="钉在桌面"><span class="tico">📌</span></button>
+          <div class="vdiv"></div>
+          <button class="tbtn" data-tool="undo" data-tip="撤销更改"><span class="tico">↩</span></button>
+          <button class="tbtn cancel" id="btnCancel" data-tip="取消"><span class="tico">✕</span></button>
+          <button class="tbtn ok" id="btnOk" data-tip="确认"><span class="tico">✓</span></button>
+        </div>
+
+        <!-- 模式 dropdown（文本 / 马赛克：一级按钮直接带箭头，选模式后只显示对应内容） -->
+        <div class="mode-menu" id="menu-text" hidden>
+          <div class="mitem" data-mode="text"><span>文字</span><span class="chk">●</span></div>
+          <div class="mitem" data-mode="num"><span>序号</span><span class="chk">○</span></div>
+        </div>
+        <div class="mode-menu" id="menu-mosaic" hidden>
+          <div class="mitem" data-mode="m"><span>马赛克</span><span class="chk">●</span></div>
+          <div class="mitem" data-mode="h"><span>高亮</span><span class="chk">○</span></div>
+          <div class="mitem" data-mode="w"><span>水印</span><span class="chk">○</span></div>
+        </div>
+
+        <!-- 形状：全部符号语言（矩形▭/椭圆◯/直线╱；外框=空心方格/填充=实心方格）；颜色=色格+▾ -->
+        <div class="subpanel" id="sub-shape" hidden>
+          <div class="subrow">
+            <div class="seg icons" id="segShapeKind">
+              <button class="on" title="矩形"><span class="tico">▭</span></button>
+              <button title="椭圆形"><span class="tico">◯</span></button>
+              <button title="直线"><span class="tico">╱</span></button>
+            </div>
+            <div class="seg icons" id="segDrawMode">
+              <button class="on" title="外框"><span class="ico-frame"></span></button>
+              <button title="填充"><span class="ico-fill"></span></button>
+            </div>
+            <div class="sliderrow"><span class="sublabel" style="min-width:34px">粗细</span>
+              <input type="range" id="rngStroke" min="1" max="16" value="4"><span class="val" id="valStroke">4</span></div>
+            <button class="colorwell" data-pop="pop-shape" title="颜色"><span class="cw" style="background:#FF3B30"></span><span class="tico" style="font-size:9px; opacity:.7">▾</span></button>
+            <div class="swatches" id="pop-shape" hidden>
+              <span class="swatch on" data-c="#FF3B30" style="background:#FF3B30"></span>
+              <span class="swatch" data-c="#FFCC00" style="background:#FFCC00"></span>
+              <span class="swatch" data-c="#34C759" style="background:#34C759"></span>
+              <span class="swatch" data-c="#0A84FF" style="background:#0A84FF"></span>
+              <span class="swatch" data-c="#FFFFFF" style="background:#FFFFFF"></span>
+              <span class="swatch" data-c="#8E8E93" style="background:#8E8E93"></span>
+              <span class="swatch custom" title="自定义">+</span>
+              <input type="color" hidden>
+            </div>
+          </div>
+        </div>
+
+        <!-- 箭头 -->
+        <div class="subpanel" id="sub-arrow" hidden>
+          <div class="subrow">
+            <div class="sliderrow"><span class="sublabel" style="min-width:34px">粗细</span>
+              <input type="range" min="1" max="16" value="4"><span class="val">4</span></div>
+            <button class="colorwell" data-pop="pop-arrow" title="颜色"><span class="cw" style="background:#FF3B30"></span><span class="tico" style="font-size:9px; opacity:.7">▾</span></button>
+            <div class="swatches" id="pop-arrow" hidden>
+              <span class="swatch on" data-c="#FF3B30" style="background:#FF3B30"></span>
+              <span class="swatch" data-c="#FFCC00" style="background:#FFCC00"></span>
+              <span class="swatch" data-c="#34C759" style="background:#34C759"></span>
+              <span class="swatch" data-c="#0A84FF" style="background:#0A84FF"></span>
+              <span class="swatch" data-c="#FFFFFF" style="background:#FFFFFF"></span>
+              <span class="swatch" data-c="#8E8E93" style="background:#8E8E93"></span>
+              <span class="swatch custom" title="自定义">+</span>
+              <input type="color" hidden>
+            </div>
+          </div>
+        </div>
+
+        <!-- 画笔 -->
+        <div class="subpanel" id="sub-pen" hidden>
+          <div class="subrow">
+            <div class="sliderrow"><span class="sublabel" style="min-width:34px">粗细</span>
+              <input type="range" min="1" max="16" value="4"><span class="val">4</span></div>
+            <button class="colorwell" data-pop="pop-pen" title="颜色"><span class="cw" style="background:#FF3B30"></span><span class="tico" style="font-size:9px; opacity:.7">▾</span></button>
+            <div class="swatches" id="pop-pen" hidden>
+              <span class="swatch on" data-c="#FF3B30" style="background:#FF3B30"></span>
+              <span class="swatch" data-c="#FFCC00" style="background:#FFCC00"></span>
+              <span class="swatch" data-c="#34C759" style="background:#34C759"></span>
+              <span class="swatch" data-c="#0A84FF" style="background:#0A84FF"></span>
+              <span class="swatch" data-c="#FFFFFF" style="background:#FFFFFF"></span>
+              <span class="swatch" data-c="#8E8E93" style="background:#8E8E93"></span>
+              <span class="swatch custom" title="自定义">+</span>
+              <input type="color" hidden>
+            </div>
+          </div>
+        </div>
+
+        <!-- 文本：文字模式（字色/背景色/大小）；序号模式（仅字色/大小，无背景色；点击选区创建序号+正上方输入框） -->
+        <div class="subpanel" id="sub-text" hidden>
+          <div class="subrow">
+            <span class="sublabel">字色</span>
+            <button class="colorwell" data-pop="pop-tcolor" title="字色"><span class="cw" style="background:#FF3B30"></span><span class="tico" style="font-size:9px; opacity:.7">▾</span></button>
+            <div class="swatches" id="pop-tcolor" hidden>
+              <span class="swatch on" data-c="#FF3B30" style="background:#FF3B30"></span>
+              <span class="swatch" data-c="#FFCC00" style="background:#FFCC00"></span>
+              <span class="swatch" data-c="#34C759" style="background:#34C759"></span>
+              <span class="swatch" data-c="#0A84FF" style="background:#0A84FF"></span>
+              <span class="swatch" data-c="#FFFFFF" style="background:#FFFFFF"></span>
+              <span class="swatch" data-c="#8E8E93" style="background:#8E8E93"></span>
+              <span class="swatch custom" title="自定义">+</span>
+              <input type="color" hidden>
+            </div>
+            <span class="sublabel" id="lblBg">背景色</span>
+            <button class="colorwell" id="cwBgBtn" data-pop="pop-tbg" title="背景色"><span class="cw" id="cwBg" style="background:transparent; border:1px dashed #8E8E93"></span><span class="tico" style="font-size:9px; opacity:.7">▾</span></button>
+            <div class="swatches" id="pop-tbg" hidden>
+              <span class="swatch on" data-c="none" style="background:transparent; border:1px dashed #8E8E93" title="无背景色（默认）"></span>
+              <span class="swatch" data-c="#FF3B30" style="background:#FF3B30"></span>
+              <span class="swatch" data-c="#FFCC00" style="background:#FFCC00"></span>
+              <span class="swatch" data-c="#34C759" style="background:#34C759"></span>
+              <span class="swatch" data-c="#0A84FF" style="background:#0A84FF"></span>
+              <span class="swatch" data-c="#FFFFFF" style="background:#FFFFFF"></span>
+              <span class="swatch" data-c="#8E8E93" style="background:#8E8E93"></span>
+              <span class="swatch custom" title="自定义">+</span>
+              <input type="color" hidden>
+            </div>
+            <span class="sublabel">大小</span>
+            <div class="sliderrow"><input type="range" min="10" max="48" value="16"><span class="val">16</span></div>
+          </div>
+        </div>
+
+        <!-- 马赛克：马赛克模式（无预览）；高亮模式（仅形状+不透明度）；水印模式（仅文字+字号，预览直接在选区内实时平铺） -->
+        <div class="subpanel" id="sub-mosaic" hidden>
+          <!-- 马赛克模式 -->
+          <div class="subrow" id="mosM">
+            <span class="sublabel">方式</span>
+            <div class="seg icons" id="segMosaicKind">
+              <button class="on" title="马赛克"><span class="tico">▦</span></button>
+              <button title="模糊"><span class="tico">◌</span></button>
+            </div>
+            <span class="sublabel">选区</span>
+            <div class="seg icons" id="segMosaicApply">
+              <button class="on" title="涂抹"><span class="tico">⬤</span></button>
+              <button title="框选"><span class="tico">⬚</span></button>
+            </div>
+            <div class="sliderrow"><span class="sublabel" style="min-width:76px">单次模糊范围</span>
+              <input type="range" min="2" max="24" value="8"><span class="val">8</span></div>
+            <div class="sliderrow"><span class="sublabel" style="min-width:60px">模糊程度</span>
+              <input type="range" min="1" max="24" value="5"><span class="val">5</span></div>
+          </div>
+          <!-- 高亮模式：仅形状 + 不透明度 -->
+          <div class="subrow" id="mosH" hidden>
+            <div class="seg icons">
+              <button class="on" title="矩形高亮"><span class="tico">▭</span></button>
+              <button title="椭圆形高亮"><span class="tico">◯</span></button>
+            </div>
+            <div class="sliderrow"><span class="sublabel" style="min-width:60px">不透明度</span>
+              <input type="range" min="0" max="100" value="50"><span class="val">50</span></div>
+          </div>
+          <!-- 水印模式：仅文字 + 字号；预览在选区内直接实时平铺 -->
+          <div class="subrow" id="mosW" hidden>
+            <span class="sublabel">文字</span>
+            <input class="tinput" id="wmInput" maxlength="19" placeholder="最多输入19个文字">
+            <span class="sublabel">字号</span>
+            <div class="sliderrow"><input type="range" id="wmSize" min="10" max="48" value="24"><span class="val" id="wmSizeVal">24</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 放大镜（边框缩放时出现） -->
+    <div id="magnifier">
+      <canvas id="magCanvas" width="120" height="120"></canvas>
+      <div class="mag-cross"></div>
+      <div id="magHex">#FFFFFF</div>
+    </div>
+  </section>
+
+  <!-- ============ 场景③ 钉图 ============ -->
+  <section class="scene" id="s-pin">
+    <div class="desktop">
+      <div class="fake-win" style="left:40px;top:60px;width:340px;height:200px"><div class="bar">底下的普通窗口</div></div>
+    </div>
+    <div class="stage-note" style="left:16px; bottom:14px;">钉图窗口：无边框 · 按住拖动 · Ctrl+滚轮缩放 · Ctrl+左键多选（边框浅蓝） · hover 右上角出现 tip 按钮</div>
+    <div class="stage-note" id="editNote" hidden style="left:50%; top:20px; transform:translateX(-50%);">钉图编辑器：载入此钉图当前画面进行编辑（原型示意）</div>
+
+    <!-- 钉图1：选中态 -->
+    <div class="pin selected" id="pin1" style="left:120px; top:120px; width:260px; height:170px;">
+      <div class="pic" style="height:100%; background:linear-gradient(135deg,#7fb2d9,#4a7ba6 60%,#2e5a80); display:flex; align-items:center; justify-content:center; color:#fff; font-size:12px;">截图内容 A（选中：Ctrl+左键）</div>
+      <div class="pin-tips">
+        <button class="pin-tip" title="编辑">✎</button>
+        <button class="pin-tip" title="最小化">—</button>
+        <button class="pin-tip" title="关闭">✕</button>
+      </div>
+    </div>
+    <!-- 钉图2：普通态 -->
+    <div class="pin" id="pin2" style="left:470px; top:200px; width:200px; height:140px;">
+      <div class="pic" style="height:100%; background:linear-gradient(135deg,#d9b97f,#a6834a); display:flex; align-items:center; justify-content:center; color:#fff; font-size:12px;">截图内容 B（hover 我看 tip）</div>
+      <div class="pin-tips">
+        <button class="pin-tip" title="编辑">✎</button>
+        <button class="pin-tip" title="最小化">—</button>
+        <button class="pin-tip" title="关闭">✕</button>
+      </div>
+    </div>
+
+    <!-- 单选右键菜单（静态展示） -->
+    <div class="menu-card" style="right:300px; top:70px;">
+      <div class="mtitle">右键菜单 · 选中 1 个 / 直接右键某窗口</div>
+      <div class="mitem">复制 <span class="arr">▸ 原图/截图</span></div>
+      <div class="msub">
+        <div class="mitem"><span class="chk">●</span> 截图（默认）</div>
+        <div class="mitem"><span class="chk">○</span> 原图</div>
+      </div>
+      <div class="mitem">另存为 <span class="arr">▸ 原图/截图</span></div>
+      <div class="msep"></div>
+      <div class="mitem">克隆</div>
+      <div class="mitem">编辑</div>
+      <div class="mitem">最小化</div>
+      <div class="msep"></div>
+      <div class="mitem">关闭</div>
+      <div class="mitem danger">全部关闭</div>
+    </div>
+
+    <!-- 多选右键菜单 -->
+    <div class="menu-card" style="right:60px; top:70px;">
+      <div class="mtitle">右键菜单 · 选中多个（Ctrl+左键）</div>
+      <div class="mitem">绑定 <span class="arr">最小化时一起最小化</span></div>
+      <div class="msep"></div>
+      <div class="mitem danger">全部关闭</div>
+    </div>
+
+    <div class="stage-note" style="right:60px; bottom:60px; max-width:280px;">操作后自动取消选中状态。<br>设置里「连接所有钉截图」开启时，可一键最小化全部分组钉图。</div>
+  </section>
+
+  <!-- ============ 场景④ 配色速查 ============ -->
+  <section class="scene" id="s-color">
+    <div class="color-sheet">
+      <h2>基础色板（macOS 深色系）</h2>
+      <div class="chips">
+        <div class="chip"><div class="c" style="background:#0A84FF"></div><div class="t"><b>强调 / 激活</b><span>#0A84FF · 按钮、滑块手柄、激活态</span></div></div>
+        <div class="chip"><div class="c" style="background:#64D2FF"></div><div class="t"><b>钉图选中</b><span>#64D2FF · 2px 边框</span></div></div>
+        <div class="chip"><div class="c" style="background:#1C1C1E"></div><div class="t"><b>面板深</b><span>#1C1C1E 95% · 工具条/尺寸标签</span></div></div>
+        <div class="chip"><div class="c" style="background:#2C2C2E"></div><div class="t"><b>面板浅</b><span>#2C2C2E · 悬浮球/二级面板/菜单</span></div></div>
+        <div class="chip"><div class="c" style="background:#3A3A3C"></div><div class="t"><b>hover</b><span>#3A3A3C · 按钮/钉图默认边框</span></div></div>
+        <div class="chip"><div class="c" style="background:#48484A"></div><div class="t"><b>边框/滑槽</b><span>#48484A · 1px 边框、slider 槽</span></div></div>
+        <div class="chip"><div class="c" style="background:#38383A"></div><div class="t"><b>分割线</b><span>#38383A · 竖分割线/行分隔</span></div></div>
+        <div class="chip"><div class="c" style="background:#E5E5EA"></div><div class="t"><b>正文</b><span>#E5E5EA</span></div></div>
+        <div class="chip"><div class="c" style="background:#8E8E93"></div><div class="t"><b>次要文字</b><span>#8E8E93 · dropdown 箭头/灰</span></div></div>
+        <div class="chip"><div class="c" style="background:#34C759"></div><div class="t"><b>确认 ✓</b><span>#34C759 · 确认按钮图标（无底色）</span></div></div>
+        <div class="chip"><div class="c" style="background:#FF3B30"></div><div class="t"><b>取消 ✕ / 危险</b><span>#FF3B30 · 取消、右键「全部关闭」</span></div></div>
+      </div>
+      <h2>标记色板（形状/箭头/画笔/文本/水印共用）</h2>
+      <div class="chips">
+        <div class="chip"><div class="c" style="background:#FF3B30"></div><div class="t"><b>红（默认）</b><span>#FF3B30</span></div></div>
+        <div class="chip"><div class="c" style="background:#FFCC00"></div><div class="t"><b>黄</b><span>#FFCC00</span></div></div>
+        <div class="chip"><div class="c" style="background:#34C759"></div><div class="t"><b>浅绿</b><span>#34C759</span></div></div>
+        <div class="chip"><div class="c" style="background:#0A84FF"></div><div class="t"><b>蓝</b><span>#0A84FF</span></div></div>
+        <div class="chip"><div class="c" style="background:#FFFFFF; border-bottom:1px solid #333"></div><div class="t"><b>白</b><span>#FFFFFF</span></div></div>
+        <div class="chip"><div class="c" style="background:#8E8E93"></div><div class="t"><b>灰</b><span>#8E8E93</span></div></div>
+        <div class="chip"><div class="c" style="background:conic-gradient(red,yellow,lime,cyan,blue,magenta,red)"></div><div class="t"><b>自定义</b><span>系统色盘（QColorDialog）</span></div></div>
+      </div>
+      <h2>遮罩 / 尺寸标签 / 放大镜</h2>
+      <div class="chips">
+        <div class="chip"><div class="c" style="background:rgba(0,0,0,.45)"></div><div class="t"><b>遮罩</b><span>#000 45%（选区外加深）</span></div></div>
+        <div class="chip"><div class="c" style="background:rgba(28,28,30,.85)"></div><div class="t"><b>尺寸标签</b><span>#1C1C1E 85% · 文字 #FFF 12px</span></div></div>
+        <div class="chip"><div class="c" style="background:#1C1C1E"></div><div class="t"><b>选区边框</b><span>#FFF 1px 实线</span></div></div>
+        <div class="chip"><div class="c" style="background:#0A84FF; position:relative"><div style="position:absolute; left:50%; top:0; bottom:0; width:2px; margin-left:-1px; background:rgba(255,255,255,.9)"></div><div style="position:absolute; top:50%; left:0; right:0; height:2px; margin-top:-1px; background:rgba(255,255,255,.9)"></div></div><div class="t"><b>放大镜</b><span>120px 圆角 8px · 准心/边框 #0A84FF · 底部色号条 #1C1C1E 88%</span></div></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="foot">
+  <b>交互说明：</b>①悬浮球点「⚙ 设置」展开设置面板，点「✂ 截图」进入截图场景 · ②工具条纯图标（hover 显名）；A/◐ 进入当前模式，▾ 弹模式菜单且二级面板只显示对应内容；水印模式在选区内实时平铺预览；📌 钉在桌面=完成截图并生成钉图；已选择后可拖动选区、边框拉伸（放大镜，C 复制色号）、Esc 取消 · ③hover 钉图窗口见右上角 tip，「编辑」打开钉图编辑器
+</div>
+
+<div class="todo-box">
+  <h3>⚠ 待主人确认的问题（原型里先按默认处理）</h3>
+  <li>「未确定 → 已选择」确认方式：原型假设<b>单击</b>确认待定选区（Esc 取消已按本次需求落实）。</li>
+  <li>序号模式：输入框在序号正上方（竖线连接，原水平连线方案已废弃）；如需别的走向再说。</li>
+  <li>水印：字色未指定，原型固定灰 40% 透明（只有文字+字号两个控件）。</li>
+  <li>截图是否需要支持多显示器（覆盖所有屏）还是仅主屏？（阶段默认：所有屏）</li>
+</div>
+
+<script>
+// ===== 场景切换 =====
+const tabs = document.getElementById('tabs');
+tabs.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  tabs.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('.scene').forEach(s => s.classList.toggle('active', s.id === b.dataset.scene));
+});
+function switchScene(id) {
+  tabs.querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.scene === id));
+  document.querySelectorAll('.scene').forEach(s => s.classList.toggle('active', s.id === id));
+  hideMagnifier();
+}
+
+// ===== 悬浮球 =====
+document.getElementById('btnCap').onclick = () => switchScene('s-cap');
+document.getElementById('btnCfg').onclick = () => { const p = document.getElementById('cfgPop'); p.hidden = !p.hidden; };
+const swLink = document.getElementById('swLink');
+swLink.onclick = () => {
+  swLink.classList.toggle('on');
+  const on = swLink.classList.contains('on');
+  swLink.setAttribute('aria-checked', on);
+  document.getElementById('btnMiniAll').disabled = !on;
+};
+
+// ===== 截图场景：桌面画到 canvas（放大镜可真实取色） =====
+const stage = document.getElementById('stage');
+const capCanvas = document.getElementById('capCanvas');
+const capCtx = capCanvas.getContext('2d', { willReadFrequently: true });
+function rr(ctx, x, y, w, h, r) {
+  if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+  else { ctx.beginPath(); ctx.rect(x, y, w, h); }
+}
+function paintDesktop() {
+  const ctx = capCtx, W = capCanvas.width, H = capCanvas.height;
+  const g = ctx.createLinearGradient(0, 0, W, H);
+  g.addColorStop(0, '#3b4a5a'); g.addColorStop(.45, '#5a6b7d'); g.addColorStop(1, '#8a7a66');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  function win(x, y, w, h, title) {
+    ctx.fillStyle = 'rgba(0,0,0,.25)'; rr(ctx, x + 4, y + 6, w, h, 6); ctx.fill();
+    ctx.fillStyle = '#f3f1ee'; rr(ctx, x, y, w, h, 6); ctx.fill();
+    ctx.fillStyle = '#e6e3df'; ctx.fillRect(x, y, w, 26);
+    ctx.fillStyle = '#6a6a6a'; ctx.font = '11px "Segoe UI", sans-serif'; ctx.fillText(title, x + 10, y + 17);
+    ctx.fillStyle = '#d8d4cf';
+    const rows = Math.floor((h - 42) / 20);
+    for (let i = 0; i < rows; i++) {
+      const ww = w - 28 - (i % 3 === 0 ? 60 : 0) - (i % 2) * 24;
+      rr(ctx, x + 14, y + 38 + i * 20, ww, 9, 4); ctx.fill();
+    }
+  }
+  win(40, 60, 300, 180, '浏览器 — 某网页');
+  win(820, 80, 240, 300, '聊天窗口');
+  win(120, 430, 330, 170, '编辑器 — main.py');
+}
+paintDesktop();
+
+// ===== 选区几何（已选择态）：拖动移动 + 边框缩放 =====
+const sel = document.getElementById('sel');
+const selSize = document.getElementById('selSize');
+const EDGE = 7, MIN_SIZE = 40;
+let S = { x: 310, y: 185, w: 480, h: 290 };
+function stageSize() { return { w: stage.clientWidth, h: stage.clientHeight }; }
+function applySel() {
+  const { w: SW, h: SH } = stageSize();
+  S.x = Math.max(0, Math.min(S.x, SW - S.w));
+  S.y = Math.max(44, Math.min(S.y, SH - S.h - 60)); // 上方控制条 / 下方工具条保持在屏内
+  sel.style.left = S.x + 'px'; sel.style.top = S.y + 'px';
+  sel.style.width = S.w + 'px'; sel.style.height = S.h + 'px';
+  selSize.textContent = Math.round(S.w) + ' × ' + Math.round(S.h);
+}
+function stageXY(e) {
+  const r = stage.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+function edgeAt(p) {
+  const n = Math.abs(p.y - S.y) <= EDGE, s = Math.abs(p.y - (S.y + S.h)) <= EDGE;
+  const w = Math.abs(p.x - S.x) <= EDGE, e = Math.abs(p.x - (S.x + S.w)) <= EDGE;
+  const inX = p.x >= S.x - EDGE && p.x <= S.x + S.w + EDGE;
+  const inY = p.y >= S.y - EDGE && p.y <= S.y + S.h + EDGE;
+  if (!inX || !inY) return null;
+  if (n && w) return 'nw'; if (n && e) return 'ne'; if (s && w) return 'sw'; if (s && e) return 'se';
+  if (n) return 'n'; if (s) return 's'; if (w) return 'w'; if (e) return 'e';
+  return null;
+}
+let drag = null; // {type:'move'|'resize', mode, p0, s0}
+sel.addEventListener('mousemove', e => {
+  if (drag) return;
+  const edge = edgeAt(stageXY(e));
+  ['n','s','e','w','ne','nw','se','sw'].forEach(d => sel.classList.toggle('edge-' + d, edge === d));
+});
+sel.addEventListener('mousedown', e => {
+  if (e.button !== 0) return;
+  if (e.target.closest('.sel-top, .sel-bottom, button, input, select')) return;
+  const p = stageXY(e);
+  const edge = edgeAt(p);
+  drag = edge
+    ? { type: 'resize', mode: edge, p0: p, s0: { ...S } }
+    : { type: 'move', p0: p, s0: { ...S } };
+  e.preventDefault();
+});
+window.addEventListener('mousemove', e => {
+  if (!drag) return;
+  const p = stageXY(e);
+  const dx = p.x - drag.p0.x, dy = p.y - drag.p0.y;
+  if (drag.type === 'move') {
+    S.x = drag.s0.x + dx; S.y = drag.s0.y + dy;
+  } else {
+    let { x, y, w, h } = drag.s0, m = drag.mode;
+    if (m.includes('e')) w = Math.max(MIN_SIZE, drag.s0.w + dx);
+    if (m.includes('s')) h = Math.max(MIN_SIZE, drag.s0.h + dy);
+    if (m.includes('w')) { w = Math.max(MIN_SIZE, drag.s0.w - dx); x = drag.s0.x + (drag.s0.w - w); }
+    if (m.includes('n')) { h = Math.max(MIN_SIZE, drag.s0.h - dy); y = drag.s0.y + (drag.s0.h - h); }
+    S = { x, y, w, h };
+    showMagnifier(p);
+  }
+  applySel();
+});
+window.addEventListener('mouseup', () => {
+  drag = null;
+  sel.classList.remove('edge-n','edge-s','edge-e','edge-w','edge-ne','edge-nw','edge-se','edge-sw');
+  hideMagnifier();
+});
+applySel();
+
+// ===== 放大镜（缩放选区时）：真实取色 + 蓝色准心 + C 复制色号 =====
+const magnifier = document.getElementById('magnifier');
+const magCanvas = document.getElementById('magCanvas');
+const magCtx = magCanvas.getContext('2d');
+const magHex = document.getElementById('magHex');
+const ZOOM_SRC = 24; // 采样 24×24 → 120×120（约 5×，像素级）
+let curHex = '#FFFFFF', hexTimer = null;
+function showMagnifier(p) {
+  const scale = capCanvas.width / stage.clientWidth; // 舞台可能被 CSS 缩放
+  const cx = Math.round(p.x * scale), cy = Math.round(p.y * scale);
+  const sx = Math.max(0, Math.min(cx - ZOOM_SRC / 2, capCanvas.width - ZOOM_SRC));
+  const sy = Math.max(0, Math.min(cy - ZOOM_SRC / 2, capCanvas.height - ZOOM_SRC));
+  magCtx.imageSmoothingEnabled = false;
+  magCtx.clearRect(0, 0, 120, 120);
+  magCtx.drawImage(capCanvas, sx, sy, ZOOM_SRC, ZOOM_SRC, 0, 0, 120, 120);
+  const px = Math.min(cx, capCanvas.width - 1), py = Math.min(cy, capCanvas.height - 1);
+  const d = capCtx.getImageData(px, py, 1, 1).data;
+  curHex = '#' + [d[0], d[1], d[2]].map(v => v.toString(16).padStart(2, '0')).join('').toUpperCase();
+  magHex.textContent = curHex + ' · 按 C 复制';
+  const { w: SW, h: SH } = stageSize();
+  let mx = p.x + 22, my = p.y + 22;
+  if (mx + 126 > SW) mx = p.x - 22 - 126;
+  if (my + 146 > SH) my = p.y - 22 - 146;
+  magnifier.style.left = mx + 'px'; magnifier.style.top = my + 'px';
+  magnifier.style.display = 'block';
+}
+function hideMagnifier() { magnifier.style.display = 'none'; }
+
+// ===== 快捷键：Esc 取消截图 · C 复制色号 =====
+document.addEventListener('keydown', e => {
+  const capOn = document.getElementById('s-cap').classList.contains('active');
+  if (!capOn) return;
+  if (e.key === 'Escape') {
+    switchScene('s-ball');
+  } else if ((e.key === 'c' || e.key === 'C') && magnifier.style.display === 'block') {
+    const done = () => {
+      magHex.textContent = '已复制 ' + curHex + ' ✓';
+      clearTimeout(hexTimer);
+      hexTimer = setTimeout(() => { if (magnifier.style.display === 'block') magHex.textContent = curHex + ' · 按 C 复制'; }, 1200);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(curHex).then(done).catch(done);
+    else done();
+  }
+});
+
+// ===== 工具条：按住背景拖动 + 屏内钳制 =====
+const selBottom = document.getElementById('selBottom');
+let tb = { x: 0, y: 0 }, tbDrag = null;
+function applyTb() { selBottom.style.transform = 'translate(' + tb.x + 'px,' + tb.y + 'px)'; }
+function clampToolbar() {
+  const r = selBottom.getBoundingClientRect(), sr = stage.getBoundingClientRect();
+  const left = r.left - sr.left, top = r.top - sr.top;
+  if (left < 0) tb.x -= left;
+  if (top < 0) tb.y -= top;
+  if (left + r.width > sr.width) tb.x -= (left + r.width - sr.width);
+  if (top + r.height > sr.height) tb.y -= (top + r.height - sr.height);
+  applyTb();
+}
+selBottom.addEventListener('mousedown', e => {
+  if (e.button !== 0) return;
+  if (e.target.closest('button, input, select, .swatches, .sliderrow, label, .num-demo')) return;
+  tbDrag = { p0: stageXY(e), t0: { ...tb } };
+  e.preventDefault();
+});
+window.addEventListener('mousemove', e => {
+  if (!tbDrag) return;
+  const p = stageXY(e);
+  tb.x = tbDrag.t0.x + (p.x - tbDrag.p0.x);
+  tb.y = tbDrag.t0.y + (p.y - tbDrag.p0.y);
+  applyTb(); clampToolbar();
+});
+window.addEventListener('mouseup', () => { tbDrag = null; });
+
+// ===== 选区：圆角 / 阴影 =====
+const rngR = document.getElementById('rngRadius');
+rngR.oninput = () => { sel.style.setProperty('--r', rngR.value + 'px'); document.getElementById('valRadius').textContent = rngR.value; };
+document.getElementById('cbShadow').onchange = e => sel.classList.toggle('shadow-on', e.target.checked);
+
+// ===== 主工具条（纯图标：hover 显名；A/◐ 进入当前模式，▾ 弹模式菜单；钉在桌面=完成截图） =====
+const subIds = { shape:'sub-shape', arrow:'sub-arrow', pen:'sub-pen', text:'sub-text', mosaic:'sub-mosaic' };
+const modeMenus = { 'text-mode':'menu-text', 'mosaic-mode':'menu-mosaic' };
+let textMode = 'text', mosaicMode = 'm';
+function hideModeMenus() { Object.values(modeMenus).forEach(id => document.getElementById(id).hidden = true); }
+function applyTextMode() {
+  const num = textMode === 'num';
+  document.getElementById('lblBg').hidden = num;   // 序号模式无背景色控件
+  document.getElementById('cwBgBtn').hidden = num;
+  document.getElementById('pop-tbg').hidden = true;
+}
+function applyMosaicMode() {
+  document.getElementById('mosM').hidden = mosaicMode !== 'm';
+  document.getElementById('mosH').hidden = mosaicMode !== 'h';
+  document.getElementById('mosW').hidden = mosaicMode !== 'w';
+  updateWmPreview();
+}
+document.getElementById('mainTools').addEventListener('click', e => {
+  const b = e.target.closest('.tbtn'); if (!b) return;
+  if (b.id === 'btnOk') return switchScene('s-pin');      // 确认 → 钉图
+  if (b.id === 'btnCancel') return switchScene('s-ball'); // 取消 → 回悬浮球
+  const t = b.dataset.tool;
+  if (t === 'undo') return;                               // 撤销：原型无功能
+  if (t === 'pin') return switchScene('s-pin');           // 钉在桌面 = 完成截图并生成钉图
+  if (modeMenus[t]) {                                     // ▾：弹模式菜单
+    hideModeMenus();
+    const menu = document.getElementById(modeMenus[t]);
+    const sr = selBottom.getBoundingClientRect();
+    menu.style.left = (b.getBoundingClientRect().left - sr.left) + 'px';
+    menu.style.top = (document.getElementById('mainTools').getBoundingClientRect().bottom - sr.top + 6) + 'px';
+    menu.hidden = false;
+    return;
+  }
+  hideModeMenus();
+  activateTool(b);
+});
+// 模式菜单点选：只显示对应模式的内容
+document.querySelectorAll('.mode-menu .mitem').forEach(mi => mi.addEventListener('click', () => {
+  const menu = mi.closest('.mode-menu');
+  const items = menu.querySelectorAll('.mitem');
+  items.forEach(x => x.querySelector('.chk').textContent = x === mi ? '●' : '○');
+  if (menu.id === 'menu-text') { textMode = mi.dataset.mode; applyTextMode(); }
+  else { mosaicMode = mi.dataset.mode; applyMosaicMode(); }
+  menu.hidden = true;
+  activateTool(document.querySelector('.tbtn[data-tool="' + (menu.id === 'menu-text' ? 'text' : 'mosaic') + '"]'));
+}));
+function activateTool(btn) {
+  document.querySelectorAll('#mainTools .tbtn').forEach(x => x.classList.toggle('on', x === btn));
+  Object.values(subIds).forEach(id => document.getElementById(id).hidden = true);
+  hideModeMenus();
+  const sub = subIds[btn.dataset.tool];
+  if (sub) document.getElementById(sub).hidden = false;
+  updateWmPreview();
+  clampToolbar(); // 展开二级面板后仍保证工具条在屏内
+}
+// ===== 分段选择（通用，图标 seg：外框/填充按位置判断） =====
+document.querySelectorAll('.seg').forEach(seg => seg.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  seg.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+  if (seg.id === 'segDrawMode') document.getElementById('rngStroke').disabled = (seg.querySelectorAll('button')[1] === b); // 填充时粗细禁用
+}));
+
+// ===== 色格（ColorWell）+ 色板 pop（通用） =====
+function syncWell(group, color) {
+  const well = document.querySelector('.colorwell[data-pop="' + group.id + '"] .cw');
+  if (!well) return;
+  if (color === 'none') { well.style.background = 'transparent'; well.style.border = '1px dashed #8E8E93'; }
+  else { well.style.background = color; well.style.border = '1px solid rgba(255,255,255,.35)'; }
+}
+document.querySelectorAll('.colorwell').forEach(btn => btn.addEventListener('click', e => {
+  e.stopPropagation();
+  const pop = document.getElementById(btn.dataset.pop);
+  if (!pop) return;
+  const opening = pop.hidden;
+  document.querySelectorAll('.swatches.pop-open').forEach(p => { p.hidden = true; p.classList.remove('pop-open'); });
+  if (opening) { pop.hidden = false; pop.classList.add('pop-open'); }
+}));
+document.querySelectorAll('.swatches').forEach(group => group.addEventListener('click', e => {
+  const s = e.target.closest('.swatch'); if (!s) return;
+  if (s.classList.contains('custom')) {
+    const input = group.querySelector('input[type=color]');
+    if (input) {
+      input.oninput = () => { s.style.background = input.value; s.dataset.c = input.value; syncWell(group, input.value); };
+      input.click();
+    }
+    return;
+  }
+  group.querySelectorAll('.swatch').forEach(x => x.classList.toggle('on', x === s));
+  syncWell(group, s.dataset.c);
+}));
+
+// ===== 滑块数值回显（通用） =====
+document.querySelectorAll('.sliderrow').forEach(row => {
+  const r = row.querySelector('input[type=range]'), v = row.querySelector('.val');
+  if (r && v) r.oninput = () => v.textContent = r.value;
+});
+
+// ===== 水印：选区内实时平铺预览（多处斜线，非单一斜线） =====
+function updateWmPreview() {
+  const el = document.getElementById('selWm');
+  const active = document.querySelector('#mainTools .tbtn.on');
+  const t = document.getElementById('wmInput').value.trim();
+  const on = active && active.dataset.tool === 'mosaic' && mosaicMode === 'w' && t;
+  if (on) {
+    const inner = document.getElementById('selWmInner');
+    inner.textContent = (t + '  ').repeat(40);
+    inner.style.fontSize = document.getElementById('wmSize').value + 'px';
+    el.hidden = false;
+  } else el.hidden = true;
+}
+document.getElementById('wmInput').addEventListener('input', updateWmPreview);
+document.getElementById('wmSize').addEventListener('input', e => {
+  document.getElementById('wmSizeVal').textContent = e.target.value;
+  updateWmPreview();
+});
+
+// ===== 钉图：点击选中（Ctrl 多选）/ 右键菜单原型屏蔽默认 / 编辑→钉图编辑器（原型示意） =====
+const editNote = document.getElementById('editNote');
+document.querySelectorAll('.pin-tip[title="编辑"]').forEach(b => b.addEventListener('click', e => {
+  e.stopPropagation();
+  editNote.hidden = false;
+  clearTimeout(editNote._t);
+  editNote._t = setTimeout(() => editNote.hidden = true, 2200);
+}));
+document.querySelectorAll('.pin').forEach(p => {
+  p.addEventListener('click', e => {
+    if (!e.ctrlKey) document.querySelectorAll('.pin').forEach(x => x.classList.remove('selected'));
+    p.classList.toggle('selected');
+  });
+  p.addEventListener('contextmenu', e => e.preventDefault());
+});
+</script>
+</body>
+</html>
