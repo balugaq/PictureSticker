@@ -272,6 +272,7 @@ class CaptureOverlay(QWidget):
                 if self._mode == "move":
                     sel.move(dx, dy, bounds=(0, 0, self.width(), self.height()))
                     self._press_pos = pos
+                    self._refresh_bright()  # 移动时重裁快照：选区内容跟随当前位置
                 elif self._mode.startswith("resize:"):
                     edge = self._mode.split(":", 1)[1]
                     sel.resize(edge, dx, dy, bounds=(0, 0, self.width(), self.height()))

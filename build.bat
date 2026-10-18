@@ -43,7 +43,7 @@ if exist "requirements.txt" (
 )
 
 echo [build] running pyinstaller ...
-"%VPY%" -m PyInstaller --noconfirm --clean --onefile --windowed --name PictureSticker --icon favicon.ico --add-data "favicon.png;." main.py
+"%VPY%" -m PyInstaller --noconfirm --clean --onefile --windowed --name PictureSticker --icon favicon.ico --add-data "favicon.ico;." main.py
 if errorlevel 1 goto :fail
 
 echo.
